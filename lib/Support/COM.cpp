@@ -16,7 +16,9 @@
 #include "llvm/Config/config.h"
 
 // Include the platform-specific parts of this class.
-#ifdef LLVM_ON_UNIX
+#ifdef LLVM_ON_FUCHSIA
+#include "Fuchsia/COM.inc"
+#elif LLVM_ON_UNIX
 #include "Unix/COM.inc"
 #elif LLVM_ON_WIN32
 #include "Windows/COM.inc"

@@ -25,6 +25,8 @@
 // MSVC's call_once implementation worked since VS 2015, which is the minimum
 // supported version as of this writing.
 #define LLVM_THREADING_USE_STD_CALL_ONCE 1
+#elif defined(LLVM_ON_FUCHSIA)
+#define LLVM_THREADING_USE_STD_CALL_ONCE 1
 #elif defined(LLVM_ON_UNIX) &&                                                 \
     (defined(_LIBCPP_VERSION) ||                                               \
      !(defined(__NetBSD__) || defined(__OpenBSD__) || defined(__ppc__)))

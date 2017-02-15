@@ -1045,6 +1045,9 @@ ErrorOr<perms> getPermissions(const Twine &Path) {
 } // end namespace llvm
 
 // Include the truly platform-specific parts.
+#if defined(LLVM_ON_FUCHSIA)
+#include "Fuchsia/Path.inc"
+#endif
 #if defined(LLVM_ON_UNIX)
 #include "Unix/Path.inc"
 #endif

@@ -117,6 +117,8 @@ MutexImpl::tryacquire()
 
 }
 
+#elif defined(LLVM_ON_FUCHSIA)
+#include "Fuchsia/Mutex.inc"
 #elif defined(LLVM_ON_UNIX)
 #include "Unix/Mutex.inc"
 #elif defined( LLVM_ON_WIN32)

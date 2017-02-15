@@ -53,6 +53,9 @@
 /* LLVM name for the native target MC init function, if available */
 #cmakedefine LLVM_NATIVE_TARGETMC LLVMInitialize${LLVM_NATIVE_ARCH}TargetMC
 
+/* Define if this is Fuchsia platform */
+#cmakedefine LLVM_ON_FUCHSIA ${LLVM_ON_FUCHSIA}
+
 /* Define if this is Unixish platform */
 #cmakedefine LLVM_ON_UNIX ${LLVM_ON_UNIX}
 

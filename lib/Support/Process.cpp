@@ -90,6 +90,9 @@ bool Process::AreCoreFilesPrevented() {
 }
 
 // Include the platform-specific parts of this class.
+#ifdef LLVM_ON_FUCHSIA
+#include "Fuchsia/Process.inc"
+#endif
 #ifdef LLVM_ON_UNIX
 #include "Unix/Process.inc"
 #endif

@@ -5,7 +5,7 @@ endif()
 if( MSVC OR MINGW )
   # libuuid required for FOLDERID_Profile usage in lib/Support/Windows/Path.inc.
   set(system_libs ${system_libs} psapi shell32 ole32 uuid)
-elseif( CMAKE_HOST_UNIX )
+elseif( CMAKE_HOST_UNIX OR FUCHSIA)
   if( HAVE_LIBRT )
     set(system_libs ${system_libs} rt)
   endif()
@@ -26,6 +26,9 @@ elseif( CMAKE_HOST_UNIX )
   set(system_libs ${system_libs} ${LLVM_PTHREAD_LIB})
   if( UNIX AND NOT (BEOS OR HAIKU) )
     set(system_libs ${system_libs} m)
+  endif()
+  if( FUCHSIA )
+    set(system_libs ${system_libs} fdio launchpad zircon)
   endif()
 endif( MSVC OR MINGW )
 
@@ -142,6 +145,7 @@ add_llvm_library(LLVMSupport
   Watchdog.cpp
 
   ADDITIONAL_HEADER_DIRS
+  Fuchsia
   Unix
   Windows
   ${LLVM_MAIN_INCLUDE_DIR}/llvm/ADT

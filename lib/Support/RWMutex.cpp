@@ -114,6 +114,8 @@ RWMutexImpl::writer_release()
   return errorcode == 0;
 }
 
+#elif defined(LLVM_ON_FUCHSIA)
+#include "Fuchsia/RWMutex.inc"
 #elif defined(LLVM_ON_UNIX)
 #include "Unix/RWMutex.inc"
 #elif defined( LLVM_ON_WIN32)

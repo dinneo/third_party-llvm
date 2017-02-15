@@ -204,7 +204,7 @@ Expected<int> LLI::ExecuteProgram(const std::string &Bitcode,
 
 void AbstractInterpreter::anchor() {}
 
-#if defined(LLVM_ON_UNIX)
+#if defined(LLVM_ON_UNIX) || defined(LLVM_ON_FUCHSIA)
 const char EXESuffix[] = "";
 #elif defined(LLVM_ON_WIN32)
 const char EXESuffix[] = "exe";

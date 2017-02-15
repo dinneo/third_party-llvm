@@ -362,6 +362,9 @@
 /* Host triple LLVM will be executed on */
 #cmakedefine LLVM_HOST_TRIPLE "${LLVM_HOST_TRIPLE}"
 
+/* Define if this is Fuchsia platform */
+#cmakedefine LLVM_ON_FUCHSIA ${LLVM_ON_FUCHSIA}
+
 /* Define if this is Unixish platform */
 #cmakedefine LLVM_ON_UNIX ${LLVM_ON_UNIX}
 

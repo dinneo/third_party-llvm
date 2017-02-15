@@ -39,6 +39,8 @@ void ThreadLocalImpl::removeInstance() {
   setInstance(nullptr);
 }
 }
+#elif defined(LLVM_ON_FUCHSIA)
+#include "Fuchsia/ThreadLocal.inc"
 #elif defined(LLVM_ON_UNIX)
 #include "Unix/ThreadLocal.inc"
 #elif defined( LLVM_ON_WIN32)

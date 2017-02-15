@@ -19,13 +19,16 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/ErrorOr.h"
 #include <system_error>
+#if defined(LLVM_ON_FUCHSIA)
+#include <zircon/types.h>
+#endif
 
 namespace llvm {
 namespace sys {
 
   /// This is the OS-specific separator for PATH like environment variables:
   // a colon on Unix or a semicolon on Windows.
-#if defined(LLVM_ON_UNIX)
+#if defined(LLVM_ON_UNIX) || defined(LLVM_ON_FUCHSIA)
   const char EnvPathSeparator = ':';
 #elif defined (LLVM_ON_WIN32)
   const char EnvPathSeparator = ';';
@@ -40,6 +43,8 @@ struct ProcessInfo {
   typedef void * HANDLE; // Must match the type of HANDLE on Windows.
   /// The handle to the process (available on Windows only).
   HANDLE ProcessHandle;
+#elif defined(LLVM_ON_FUCHSIA)
+  typedef zx_handle_t ProcessId;
 #else
 #error "ProcessInfo is not defined for this platform!"
 #endif
