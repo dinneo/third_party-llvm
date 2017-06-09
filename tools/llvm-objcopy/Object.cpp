@@ -13,8 +13,7 @@ using namespace llvm;
 using namespace object;
 using namespace ELF;
 
-template<class ELFT>
-void Segment::writeHeader(FileOutputBuffer &Out) const {
+template <class ELFT> void Segment::writeHeader(FileOutputBuffer &Out) const {
   uint8_t *Buf = Out.getBufferStart();
   Buf += sizeof(typename ELFT::Ehdr) + Index * sizeof(typename ELFT::Phdr);
   typename ELFT::Phdr &Phdr = *reinterpret_cast<typename ELFT::Phdr *>(Buf);
@@ -43,7 +42,7 @@ void Segment::finalize() {
 
 void SectionBase::finalize() {}
 
-template<class ELFT>
+template <class ELFT>
 void SectionBase::writeHeader(FileOutputBuffer &Out) const {
   uint8_t *Buf = Out.getBufferStart();
   Buf += HeaderOffset;
@@ -104,12 +103,12 @@ void StringTableSection::writeSection(FileOutputBuffer &Out) const {
   }
 }
 
-template<class ELFT>
+template <class ELFT>
 void Object<ELFT>::readProgramHeaders(const ELFFile<ELFT> &ElfFile) {
   uint32_t Index = 0;
   for (const auto &Phdr : unwrapOrError(ElfFile.program_headers())) {
     Segments.emplace_back();
-    Segment& Seg = Segments.back();
+    Segment &Seg = Segments.back();
     Seg.Type = Phdr.p_type;
     Seg.Flags = Phdr.p_flags;
     Seg.Offset = Phdr.p_offset;
@@ -126,11 +125,10 @@ void Object<ELFT>::readProgramHeaders(const ELFFile<ELFT> &ElfFile) {
         Section->ParrentSegment = &Seg;
       }
     }
-
   }
 }
 
-template<class ELFT>
+template <class ELFT>
 void Object<ELFT>::readSectionHeaders(const ELFFile<ELFT> &ElfFile) {
   uint32_t Index = 0;
   for (const auto &Shdr : unwrapOrError(ElfFile.sections())) {
@@ -155,15 +153,13 @@ void Object<ELFT>::readSectionHeaders(const ELFFile<ELFT> &ElfFile) {
   }
 }
 
-template<class ELFT>
-size_t Object<ELFT>::totalSize() const {
+template <class ELFT> size_t Object<ELFT>::totalSize() const {
   // We already have the section header offset so we can calculate the total
   // size by just adding up the size of each section header;
   return SHOffset + Sections.size() * sizeof(typename ELFT::Shdr);
 }
 
-template<class ELFT>
-Object<ELFT>::Object(const ELFObjectFile<ELFT> &Obj) {
+template <class ELFT> Object<ELFT>::Object(const ELFObjectFile<ELFT> &Obj) {
   const auto &ElfFile = *Obj.getELFFile();
   const auto &Ehdr = *ElfFile.getHeader();
 
@@ -182,12 +178,12 @@ Object<ELFT>::Object(const ELFObjectFile<ELFT> &Obj) {
   readProgramHeaders(ElfFile);
 }
 
-template<class ELFT>
-void Object<ELFT>::sortSections() {
+template <class ELFT> void Object<ELFT>::sortSections() {
   // Put allocated sections in address order. Maintain ordering as closely as
   // possible while meeting that demand however.
   auto CompareSections = [](const SecPtr &a, const SecPtr &b) {
-    if(a->Type == SHT_NULL) return true;
+    if (a->Type == SHT_NULL)
+      return true;
     if (a->Flags & SHF_ALLOC && b->Flags & SHF_ALLOC)
       return a->Addr < b->Addr;
     return a->Index < b->Index;
@@ -196,12 +192,12 @@ void Object<ELFT>::sortSections() {
 }
 
 uint64_t align(uint64_t value, uint64_t multiple) {
-  if(!multiple || value % multiple == 0) return value;
+  if (!multiple || value % multiple == 0)
+    return value;
   return value + multiple - value % multiple;
 }
 
-template<class ELFT>
-void Object<ELFT>::assignOffsets() {
+template <class ELFT> void Object<ELFT>::assignOffsets() {
   // Decide file offsets and indexs
   size_t PhdrSize = Segments.size() * sizeof(typename ELFT::Phdr);
   // After the header and the program headers we can put section data.
@@ -210,9 +206,9 @@ void Object<ELFT>::assignOffsets() {
   for (auto &Section : Sections) {
     // The segment can have a different alignment than the section. We need to
     // make sure
-    if(Section->ParrentSegment) {
+    if (Section->ParrentSegment) {
       auto FirstInSeg = Section->ParrentSegment->firstSection();
-      if(FirstInSeg == Section.get())
+      if (FirstInSeg == Section.get())
         Offset = align(Offset, Section->ParrentSegment->Align);
     }
     Offset = align(Offset, Section->Align);
@@ -230,8 +226,7 @@ void Object<ELFT>::assignOffsets() {
   SHOffset = Offset;
 }
 
-template<class ELFT>
-void Object<ELFT>::finalize() {
+template <class ELFT> void Object<ELFT>::finalize() {
   sortSections();
   assignOffsets();
 
@@ -251,7 +246,7 @@ void Object<ELFT>::finalize() {
     Segment.finalize();
 }
 
-template<class ELFT>
+template <class ELFT>
 void Object<ELFT>::writeHeader(FileOutputBuffer &Out) const {
   uint8_t *Buf = Out.getBufferStart();
   typename ELFT::Ehdr &Ehdr = *reinterpret_cast<typename ELFT::Ehdr *>(Buf);
@@ -271,26 +266,25 @@ void Object<ELFT>::writeHeader(FileOutputBuffer &Out) const {
   Ehdr.e_shstrndx = SectionNames->Index;
 }
 
-template<class ELFT>
+template <class ELFT>
 void Object<ELFT>::writeProgramHeaders(FileOutputBuffer &Out) const {
   for (auto &Phdr : Segments)
     Phdr.template writeHeader<ELFT>(Out);
 }
 
-template<class ELFT>
+template <class ELFT>
 void Object<ELFT>::writeSectionHeaders(FileOutputBuffer &Out) const {
   for (auto &Section : Sections)
     Section->template writeHeader<ELFT>(Out);
 }
 
-template<class ELFT>
+template <class ELFT>
 void Object<ELFT>::writeSectionData(FileOutputBuffer &Out) const {
   for (auto &Section : Sections)
     Section->writeSection(Out);
 }
 
-template<class ELFT>
-void Object<ELFT>::write(FileOutputBuffer &Out) {
+template <class ELFT> void Object<ELFT>::write(FileOutputBuffer &Out) {
   writeHeader(Out);
   writeProgramHeaders(Out);
   writeSectionData(Out);

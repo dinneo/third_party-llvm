@@ -70,7 +70,7 @@ public:
   uint32_t Index;
 
   void finalize();
-  const SectionBase * firstSection() {
+  const SectionBase * firstSection() const {
     if(Sections.size())
       return *Sections.begin();
     return nullptr;
