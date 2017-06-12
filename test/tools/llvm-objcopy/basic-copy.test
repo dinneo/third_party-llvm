@@ -17,11 +17,6 @@ Sections:
 
 # CHECK: Type: SHT_NULL
 
-# CHECK:      Name: .shstrtab
-# CHECK-NEXT: Type: SHT_STRTAB
-# CHECK-NEXT: Flags [
-# CHECK-NEXT: ]
-
 # CHECK:      Name: .text
 # CHECK-NEXT: Type: SHT_PROGBITS
 # CHECK-NEXT: Flags [
@@ -31,3 +26,8 @@ Sections:
 # CHECK-NEXT: Address:
 # CHECK-NEXT: Offset:
 # CHECK-NEXT: Size: 4
+
+# CHECK:      Name: .shstrtab
+# CHECK-NEXT: Type: SHT_STRTAB
+# CHECK-NEXT: Flags [
+# CHECK-NEXT: ]

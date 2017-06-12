@@ -105,7 +105,7 @@ void StringTableSection::writeSection(FileOutputBuffer &Out) const {
 
 template <class ELFT>
 void SymbolTableSection<ELFT>::addSymbol(StringRef Name, uint8_t Bind,
-                                         uint8_t Type SectionBase *DefinedIn,
+                                         uint8_t Type, SectionBase *DefinedIn,
                                          uint64_t Value, uint64_t Sz) {
   Symbol Sym;
   Sym.Name = Name;
@@ -114,15 +114,15 @@ void SymbolTableSection<ELFT>::addSymbol(StringRef Name, uint8_t Bind,
   Sym.DefinedIn = DefinedIn;
   Sym.Value = Value;
   Sym.Size = Sz;
-  auto Res = Symbols.emplace(Name, Sym);
+  auto Res = Symbols.insert(std::make_pair(Name, Sym));
   if (Res.second)
-    Size += sizeof(ELFT::Sym);
+    Size += sizeof(typename ELFT::Sym);
 }
 
 template <class ELFT>
 void SymbolTableSection<ELFT>::removeSymbol(StringRef Name) {
   auto Iter = Symbols.find(Name);
-  if (Iter != End) {
+  if (Iter != std::end(Symbols)) {
     Symbols.erase(Iter);
     Size += sizeof(ELFT::Sym);
   }
@@ -146,7 +146,7 @@ template <class ELFT> void SymbolTableSection<ELFT>::finalize() {
 }
 
 template <class ELFT>
-void SymbolTableSection<ELFT>::writeSection(llvm::FileOutputBuffer &out) const {
+void SymbolTableSection<ELFT>::writeSection(llvm::FileOutputBuffer &Out) const {
   uint8_t *Buf = Out.getBufferStart();
   typename ELFT::Sym *Sym = reinterpret_cast<typename ELFT::Sym *>(Buf);
   Sym->st_name = 0;
@@ -196,9 +196,18 @@ void Object<ELFT>::readProgramHeaders(const ELFFile<ELFT> &ElfFile) {
 template <class ELFT>
 void Object<ELFT>::readSectionHeaders(const ELFFile<ELFT> &ElfFile) {
   uint32_t Index = 0;
+  uint32_t SymTabIndex;
+  const Elf_Shdr *SymTabShdr = nullptr;
   for (const auto &Shdr : unwrapOrError(ElfFile.sections())) {
-    if (Shdr.sh_type == SHT_STRTAB)
+    if (Shdr.sh_type == SHT_STRTAB) {
+      Index++;
       continue;
+    }
+    if (Shdr.sh_type == SHT_SYMTAB) {
+      SymTabShdr = &Shdr;
+      SymTabIndex = Index++;
+      continue;
+    }
     ArrayRef<uint8_t> Data = unwrapOrError(ElfFile.getSectionContents(&Shdr));
     SecPtr Sec = make_unique<Section>(Data);
     Sec->Name = unwrapOrError(ElfFile.getSectionName(&Shdr));
@@ -211,10 +220,41 @@ void Object<ELFT>::readSectionHeaders(const ELFFile<ELFT> &ElfFile) {
     Sec->Info = Shdr.sh_info;
     Sec->Align = Shdr.sh_addralign;
     Sec->EntrySize = Shdr.sh_entsize;
-    Sec->Index = Index;
-    Index++;
+    Sec->Index = Index++;
     SectionNames->addString(Sec->Name);
     Sections.push_back(std::move(Sec));
+  }
+  // If we encountered a symbol table construct it now that we should have
+  // every single. Sections are currently in Index sorted order but there is
+  // possibly a gap from the SymTabShdr. This means we can't just index into
+  // Sections to get the st_shndx item. But we can binary search which is almost
+  // as good.
+  if (SymTabShdr) {
+    StringTable = new StringTableSection();
+    StringTable->Name = ".strtab";
+    StringTable->Index = Index;
+    SectionNames->addString(StringTable->Name);
+    Sections.emplace_back(StringTable);
+
+    SymbolTable = new SymbolTableSection<ELFT>(*StringTable);
+    SymbolTable->Name = ".symtab";
+    SymbolTable->Index = SymTabIndex;
+    SectionNames->addString(SymbolTable->Name);
+
+    StringRef StrTabData =
+        unwrapOrError(ElfFile.getStringTableForSymtab(*SymTabShdr));
+    for (const auto &Sym : unwrapOrError(ElfFile.symbols(SymTabShdr))) {
+      auto DefSectionIter = std::lower_bound(
+          std::begin(Sections), std::end(Sections), Sym.st_shndx,
+          [](const SecPtr &A, uint32_t Index) { return A->Index < Index; });
+      StringRef Name = unwrapOrError(Sym.getName(StrTabData));
+      StringTable->addString(Name);
+      SymbolTable->addSymbol(Name, Sym.getBinding(), Sym.getType(),
+                             DefSectionIter->get(), Sym.getValue(),
+                             Sym.st_size);
+    }
+
+    Sections.emplace_back(SymbolTable);
   }
 }
 
@@ -234,26 +274,20 @@ template <class ELFT> Object<ELFT>::Object(const ELFObjectFile<ELFT> &Obj) {
   Version = Ehdr.e_version;
   Entry = Ehdr.e_entry;
   Flags = Ehdr.e_flags;
+
   SectionNames = new StringTableSection();
   SectionNames->Name = ".shstrtab";
+  SectionNames->Index = Ehdr.e_shstrndx;
   SectionNames->addString(SectionNames->Name);
-  Sections.emplace_back(SectionNames);
 
   readSectionHeaders(ElfFile);
   readProgramHeaders(ElfFile);
 }
 
 template <class ELFT> void Object<ELFT>::sortSections() {
-  // Put allocated sections in address order. Maintain ordering as closely as
-  // possible while meeting that demand however.
-  auto CompareSections = [](const SecPtr &A, const SecPtr &B) {
-    if (A->Type == SHT_NULL)
-      return true;
-    if (A->Flags & SHF_ALLOC && B->Flags & SHF_ALLOC)
-      return A->Addr < B->Addr;
-    return A->Index < B->Index;
-  };
-  std::sort(std::begin(Sections), std::end(Sections), CompareSections);
+  std::sort(
+      std::begin(Sections), std::end(Sections),
+      [](const SecPtr &A, const SecPtr &B) { return A->Index < B->Index; });
 }
 
 uint64_t align(uint64_t Value, uint64_t Multiple) {
@@ -287,7 +321,7 @@ template <class ELFT> void Object<ELFT>::assignOffsets() {
   // section header table offset to be exactly here. This spot might not be
   // aligned properlly however so we should align it as needed. This only takes
   // a little bit of tweaking to ensure that the sh_name is 4 byte aligned
-  Offset += 4 - Offset % 4;
+  Offset = align(Offset, 4);
   SHOffset = Offset;
 }
 

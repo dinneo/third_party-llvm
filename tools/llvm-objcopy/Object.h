@@ -121,19 +121,21 @@ struct Symbol {
 template <class ELFT> class SymbolTableSection : public SectionBase {
 private:
   StringTableSection &SymbolNames;
-  std::map<llvm::StringRef, Symbol> Symbols;
+  llvm::StringMap<Symbol> Symbols;
   std::vector<Symbol> FinalSymbols;
 
 public:
   SymbolTableSection(StringTableSection &SymNames) : SymbolNames(SymNames) {
     Type = llvm::ELF::SHT_SYMTAB;
-    Size = sizeof(ELFT::Sym);
-    Align = sizeof(ELFT::Word);
-    EntrySize = sizeof(ELFT::Sym);
+    // The initlal size is to account for the dummy symbol at index 0.
+    Size = sizeof(typename ELFT::Sym);
+    Align = sizeof(typename ELFT::Word);
+    EntrySize = sizeof(typename ELFT::Sym);
   }
 
-  void addSymbol(StringRef, uint8_t, SectionBase *, uint64_t, uint64_t);
-  void removeSymbol(StringRef);
+  void addSymbol(llvm::StringRef Name, uint8_t Bind, uint8_t Type,
+                 SectionBase *DefinedIn, uint64_t Value, uint64_t Sz);
+  void removeSymbol(llvm::StringRef);
   void finalize() override;
   void writeSection(llvm::FileOutputBuffer &) const override;
   static bool classof(const SectionBase *S) {
@@ -149,6 +151,8 @@ private:
   typedef typename ELFT::Ehdr Elf_Ehdr;
   typedef typename ELFT::Phdr Elf_Phdr;
 
+  SymbolTableSection<ELFT> *SymbolTable;
+  StringTableSection *StringTable;
   StringTableSection *SectionNames;
   std::vector<SecPtr> Sections;
   std::vector<Segment> Segments;
