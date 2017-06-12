@@ -104,6 +104,72 @@ void StringTableSection::writeSection(FileOutputBuffer &Out) const {
 }
 
 template <class ELFT>
+void SymbolTableSection<ELFT>::addSymbol(StringRef Name, uint8_t Bind,
+                                         uint8_t Type SectionBase *DefinedIn,
+                                         uint64_t Value, uint64_t Sz) {
+  Symbol Sym;
+  Sym.Name = Name;
+  Sym.Binding = Bind;
+  Sym.Type = Type;
+  Sym.DefinedIn = DefinedIn;
+  Sym.Value = Value;
+  Sym.Size = Sz;
+  auto Res = Symbols.emplace(Name, Sym);
+  if (Res.second)
+    Size += sizeof(ELFT::Sym);
+}
+
+template <class ELFT>
+void SymbolTableSection<ELFT>::removeSymbol(StringRef Name) {
+  auto Iter = Symbols.find(Name);
+  if (Iter != End) {
+    Symbols.erase(Iter);
+    Size += sizeof(ELFT::Sym);
+  }
+}
+
+template <class ELFT> void SymbolTableSection<ELFT>::finalize() {
+  auto CompareBinding = [](const Symbol &a, const Symbol &b) {
+    return a.Binding < b.Binding;
+  };
+  for (auto &Entry : Symbols) {
+    Entry.second.NameIndex = SymbolNames.findIndex(Entry.second.Name);
+    FinalSymbols.push_back(Entry.second);
+  }
+  Symbol DummyLocal;
+  DummyLocal.Binding = STB_LOCAL;
+  std::sort(std::begin(FinalSymbols), std::end(FinalSymbols), CompareBinding);
+  auto Iter = std::upper_bound(std::begin(FinalSymbols), std::end(FinalSymbols),
+                               DummyLocal, CompareBinding);
+  Info = std::end(FinalSymbols) - Iter;
+  Link = SymbolNames.Index;
+}
+
+template <class ELFT>
+void SymbolTableSection<ELFT>::writeSection(llvm::FileOutputBuffer &out) const {
+  uint8_t *Buf = Out.getBufferStart();
+  typename ELFT::Sym *Sym = reinterpret_cast<typename ELFT::Sym *>(Buf);
+  Sym->st_name = 0;
+  Sym->st_value = 0;
+  Sym->st_size = 0;
+  Sym->st_info = 0;
+  Sym->st_other = 0;
+  Sym->st_shndx = SHN_UNDEF;
+  ++Sym;
+  for(auto &Symbol : FinalSymbols) {
+    Sym->st_name = Symbol.NameIndex;
+    Sym->st_value = Symbol.Value;
+    Sym->st_size = Symbol.Size;
+    Sym->setBinding(Symbol.Binding);
+    Sym->setType(Symbol.Type);
+    if(Symbol.DefinedIn)
+      Sym->st_shndx = Symbol.DefinedIn->Index;
+    else
+      Sym->st_shndx = SHN_UNDEF;
+  }
+}
+
+template <class ELFT>
 void Object<ELFT>::readProgramHeaders(const ELFFile<ELFT> &ElfFile) {
   uint32_t Index = 0;
   for (const auto &Phdr : unwrapOrError(ElfFile.program_headers())) {
