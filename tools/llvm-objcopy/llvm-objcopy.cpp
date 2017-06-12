@@ -88,8 +88,9 @@ int main(int argc, char **argv) {
   if (!BinaryOrErr)
     reportError(InputFilename, BinaryOrErr.takeError());
   Binary &Binary = *BinaryOrErr.get().getBinary();
-  if (ELFObjectFile<ELF64LE> *o = dyn_cast<ELFObjectFile<ELF64LE>>(&Binary))
+  if (ELFObjectFile<ELF64LE> *o = dyn_cast<ELFObjectFile<ELF64LE>>(&Binary)) {
     CopyBinary(*o);
+    return 0;
+  }
   reportError(InputFilename, object_error::invalid_file_type);
-  return 0;
 }

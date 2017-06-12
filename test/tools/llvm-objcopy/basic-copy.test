@@ -15,6 +15,13 @@ Sections:
     AddressAlign:    0x0000000000000010
     Content:         "00000000"
 
+# CHECK: Type: SHT_NULL
+
+# CHECK:      Name: .shstrtab
+# CHECK-NEXT: Type: SHT_STRTAB
+# CHECK-NEXT: Flags [
+# CHECK-NEXT: ]
+
 # CHECK:      Name: .text
 # CHECK-NEXT: Type: SHT_PROGBITS
 # CHECK-NEXT: Flags [
@@ -24,16 +31,3 @@ Sections:
 # CHECK-NEXT: Address:
 # CHECK-NEXT: Offset:
 # CHECK-NEXT: Size: 4
-# CHECK: Type: SHT_NULL
-# CHECK:      Name: .symtab
-# CHECK-NEXT: Type: SHT_SYMTAB
-# CHECK-NEXT: Flags [
-# CHECK-NEXT: ]
-# CHECK:      Name: .strtab
-# CHECK-NEXT: Type: SHT_STRTAB
-# CHECK-NEXT: Flags [
-# CHECK-NEXT: ]
-# CHECK:      Name: .shstrtab
-# CHECK-NEXT: Type: SHT_STRTAB
-# CHECK-NEXT: Flags [
-# CHECK-NEXT: ]

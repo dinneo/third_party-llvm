@@ -65,7 +65,7 @@ void Section::writeSection(FileOutputBuffer &Out) const {
 }
 
 void StringTableSection::addString(StringRef Name) {
-  auto res = Strings.emplace(Name, 0);
+  auto res = Strings.insert(std::make_pair(Name, 0));
   // We need to account for the null character as well
   if (res.second)
     Size += Name.size() + 1;
@@ -88,15 +88,15 @@ uint32_t StringTableSection::findIndex(StringRef Name) const {
 void StringTableSection::finalize() {
   uint32_t NameIndex = 0;
   for (auto &Name : Strings) {
-    Name.second = NameIndex;
-    NameIndex += Name.first.size() + 1;
+    Name.getValue() = NameIndex;
+    NameIndex += Name.getKey().size() + 1;
   }
 }
 
 void StringTableSection::writeSection(FileOutputBuffer &Out) const {
   uint8_t *Buf = Out.getBufferStart() + Offset;
   for (const auto &Name : Strings) {
-    Buf = std::copy(std::begin(Name.first), std::end(Name.first), Buf);
+    Buf = std::copy(std::begin(Name.getKey()), std::end(Name.getKey()), Buf);
     // We need to set the null character and then increment the buffer past it
     *Buf = 0;
     Buf++;
@@ -155,7 +155,7 @@ void Object<ELFT>::readSectionHeaders(const ELFFile<ELFT> &ElfFile) {
 template <class ELFT> size_t Object<ELFT>::totalSize() const {
   // We already have the section header offset so we can calculate the total
   // size by just adding up the size of each section header;
-  return SHOffset + Sections.size() * sizeof(typename Elf_Shdr);
+  return SHOffset + Sections.size() * sizeof(Elf_Shdr);
 }
 
 template <class ELFT> Object<ELFT>::Object(const ELFObjectFile<ELFT> &Obj) {
@@ -200,7 +200,7 @@ template <class ELFT> void Object<ELFT>::assignOffsets() {
   // Decide file offsets and indexs
   size_t PhdrSize = Segments.size() * sizeof(Elf_Phdr);
   // After the header and the program headers we can put section data.
-  uint64_t Offset = sizeof(ELF_Ehdr) + PhdrSize;
+  uint64_t Offset = sizeof(Elf_Ehdr) + PhdrSize;
   uint64_t Index = 0;
   for (auto &Section : Sections) {
     // The segment can have a different alignment than the section. We need to

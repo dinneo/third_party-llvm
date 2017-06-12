@@ -89,7 +89,7 @@ public:
 
 class StringTableSection : public SectionBase {
 private:
-  std::map<llvm::StringRef, uint32_t> Strings;
+  llvm::StringMap<uint32_t> Strings;
 
 public:
   StringTableSection() {
@@ -103,41 +103,6 @@ public:
   void writeSection(llvm::FileOutputBuffer &Out) const override;
   static bool classof(const SectionBase *S) {
     return S->Type == llvm::ELF::SHT_STRTAB;
-  }
-};
-
-struct Symbol {
-  llvm::StringRef Name;
-  uint32_t NameIndex;
-  uint8_t Binding;
-  uint8_t Type;
-  SectionBase *DefinedIn;
-  uint64_t Value;
-  uint64_t Size;
-};
-
-// The symbol data changes from ELFT to ELFT so we need to template it. This
-// lets us implement writeSection
-template <class ELFT> class SymbolTableSection : public SectionBase {
-private:
-  StringTableSection &SymbolNames;
-  std::map<llvm::StringRef, Symbol> Symbols;
-  std::vector<Symbol> FinalSymbols;
-
-public:
-  SymbolTableSection(StringTableSection &SymNames) : SymbolNames(SymNames) {
-    Type = llvm::ELF::SHT_SYMTAB;
-    Size = sizeof(ELFT::Sym);
-    Align = sizeof(ELFT::Word);
-    EntrySize = sizeof(ELFT::Sym);
-  }
-
-  void addSymbol(StringRef, uint8_t, SectionBase *, uint64_t, uint64_t);
-  void removeSymbol(StringRef);
-  void finalize() override;
-  void writeSection(llvm::FileOutputBuffer &) const override;
-  static bool classof(const SectionBase *S) {
-    return S->Type == llvm::ELF::SHT_SYMTAB;
   }
 };
 
