@@ -31,43 +31,42 @@ public:
   uint64_t HeaderOffset;
   uint32_t Index;
 
-  uint64_t NameIndex;
-  uint64_t Type;
-  uint64_t Flags;
-  uint64_t Size;
-  uint64_t Link;
-  uint64_t Addr;
-  uint64_t Offset;
-  uint64_t Info;
-  uint64_t Align;
-  uint32_t EntrySize;
+  uint64_t Addr = 0;
+  uint64_t Align = 1;
+  uint32_t EntrySize = 0;
+  uint64_t Flags = 0;
+  uint64_t Info = 0;
+  uint64_t Link = llvm::ELF::SHN_UNDEF;
+  uint64_t NameIndex = 0;
+  uint64_t Offset = 0;
+  uint64_t Size = 0;
+  uint64_t Type = llvm::ELF::SHT_NULL;
 
   virtual ~SectionBase() {}
   virtual void finalize();
-  template<class ELFT>
-  void writeHeader(llvm::FileOutputBuffer &) const;
-  virtual void writeSection(llvm::FileOutputBuffer &) const = 0;
+  template <class ELFT> void writeHeader(llvm::FileOutputBuffer &Out) const;
+  virtual void writeSection(llvm::FileOutputBuffer &Out) const = 0;
 };
 
 class Segment {
 private:
   struct SectionCompare {
-    bool operator()(const SectionBase * lhs, const SectionBase * rhs) const {
-      return lhs->Addr < rhs->Addr;
+    bool operator()(const SectionBase *Lhs, const SectionBase *Rhs) const {
+      return Lhs->Addr < Rhs->Addr;
     }
   };
 
   std::set<const SectionBase *, SectionCompare> Sections;
 
 public:
-  uint64_t Type;
-  uint64_t Offset;
-  uint64_t VAddr;
-  uint64_t FileSize;
-  uint64_t MemSize;
   uint64_t Align;
+  uint64_t FileSize;
   uint32_t Flags;
   uint32_t Index;
+  uint64_t MemSize;
+  uint64_t Offset;
+  uint64_t Type;
+  uint64_t VAddr;
 
   void finalize();
   const SectionBase * firstSection() const {
@@ -76,8 +75,7 @@ public:
     return nullptr;
   }
   void addSection(const SectionBase *sec) { Sections.insert(sec); }
-  template<class ELFT>
-  void writeHeader(llvm::FileOutputBuffer &) const;
+  template <class ELFT> void writeHeader(llvm::FileOutputBuffer &Out) const;
 };
 
 class Section : public SectionBase {
@@ -86,7 +84,7 @@ private:
 
 public:
   Section(llvm::ArrayRef<uint8_t> Data) : Contents(Data) {}
-  void writeSection(llvm::FileOutputBuffer &) const override;
+  void writeSection(llvm::FileOutputBuffer &Out) const override;
 };
 
 class StringTableSection : public SectionBase {
@@ -96,19 +94,13 @@ private:
 public:
   StringTableSection() {
     Type = llvm::ELF::SHT_STRTAB;
-    Flags = 0;
-    Size = 0;
-    Link = 0;
-    Info = 0;
-    Align = 1;
-    EntrySize = 0;
   }
 
-  void addString(llvm::StringRef);
-  void removeString(llvm::StringRef);
-  uint32_t findIndex(llvm::StringRef) const;
+  void addString(llvm::StringRef Name);
+  void removeString(llvm::StringRef Name);
+  uint32_t findIndex(llvm::StringRef Name) const;
   void finalize() override;
-  void writeSection(llvm::FileOutputBuffer &) const override;
+  void writeSection(llvm::FileOutputBuffer &Out) const override;
   static bool classof(const SectionBase *S) {
     return S->Type == llvm::ELF::SHT_STRTAB;
   }
@@ -118,18 +110,22 @@ template<class ELFT>
 class Object {
 private:
   typedef std::unique_ptr<SectionBase> SecPtr;
+  typedef typename ELFT::Shdr Elf_Shdr;
+  typedef typename ELFT::Ehdr Elf_Ehdr;
+  typedef typename ELFT::Phdr Elf_Phdr;
+
   StringTableSection *SectionNames;
   std::vector<SecPtr> Sections;
   std::vector<Segment> Segments;
 
   void sortSections();
   void assignOffsets();
-  void readProgramHeaders(const llvm::object::ELFFile<ELFT> &);
-  void readSectionHeaders(const llvm::object::ELFFile<ELFT> &);
-  void writeHeader(llvm::FileOutputBuffer &) const;
-  void writeProgramHeaders(llvm::FileOutputBuffer &) const;
-  void writeSectionData(llvm::FileOutputBuffer &) const;
-  void writeSectionHeaders(llvm::FileOutputBuffer &) const;
+  void readProgramHeaders(const llvm::object::ELFFile<ELFT> &ElfFile);
+  void readSectionHeaders(const llvm::object::ELFFile<ELFT> &ElfFile);
+  void writeHeader(llvm::FileOutputBuffer &Out) const;
+  void writeProgramHeaders(llvm::FileOutputBuffer &Out) const;
+  void writeSectionData(llvm::FileOutputBuffer &Out) const;
+  void writeSectionHeaders(llvm::FileOutputBuffer &Out) const;
 
 public:
   uint8_t Ident[16];
@@ -139,9 +135,10 @@ public:
   uint32_t Machine;
   uint32_t Version;
   uint32_t Flags;
-  Object(const llvm::object::ELFObjectFile<ELFT> &);
+
+  Object(const llvm::object::ELFObjectFile<ELFT> &Obj);
   size_t totalSize() const;
   void finalize();
-  void write(llvm::FileOutputBuffer &);
+  void write(llvm::FileOutputBuffer &Out);
 };
 #endif

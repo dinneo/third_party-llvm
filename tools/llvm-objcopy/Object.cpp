@@ -28,11 +28,11 @@ template <class ELFT> void Segment::writeHeader(FileOutputBuffer &Out) const {
 }
 
 void Segment::finalize() {
-  auto CompOffset = [](const SectionBase *a, const SectionBase *b) -> bool {
-    return a->Offset < b->Offset;
-  };
   auto MinElem =
-      std::min_element(std::begin(Sections), std::end(Sections), CompOffset);
+      std::min_element(std::begin(Sections), std::end(Sections),
+                       [](const SectionBase *a, const SectionBase *b) -> bool {
+                         return a->Offset < b->Offset;
+                       });
   Offset = (**MinElem).Offset;
   FileSize = 0;
   for (auto Section : Sections)
@@ -72,9 +72,9 @@ void StringTableSection::addString(StringRef Name) {
 }
 
 void StringTableSection::removeString(StringRef Name) {
-  size_t count = Strings.erase(Name);
+  size_t Count = Strings.erase(Name);
   // We need to account for the null character as well
-  if (count)
+  if (Count)
     Size -= (Name.size() + 1);
 }
 
@@ -116,8 +116,7 @@ void Object<ELFT>::readProgramHeaders(const ELFFile<ELFT> &ElfFile) {
     Seg.FileSize = Phdr.p_filesz;
     Seg.MemSize = Phdr.p_memsz;
     Seg.Align = Phdr.p_align;
-    Seg.Index = Index;
-    Index++;
+    Seg.Index = Index++;
     for (auto &Section : Sections) {
       if (Seg.Offset <= Section->Offset &&
           Seg.Offset + Seg.FileSize >= Section->Offset + Section->Size) {
@@ -156,7 +155,7 @@ void Object<ELFT>::readSectionHeaders(const ELFFile<ELFT> &ElfFile) {
 template <class ELFT> size_t Object<ELFT>::totalSize() const {
   // We already have the section header offset so we can calculate the total
   // size by just adding up the size of each section header;
-  return SHOffset + Sections.size() * sizeof(typename ELFT::Shdr);
+  return SHOffset + Sections.size() * sizeof(typename Elf_Shdr);
 }
 
 template <class ELFT> Object<ELFT>::Object(const ELFObjectFile<ELFT> &Obj) {
@@ -181,27 +180,27 @@ template <class ELFT> Object<ELFT>::Object(const ELFObjectFile<ELFT> &Obj) {
 template <class ELFT> void Object<ELFT>::sortSections() {
   // Put allocated sections in address order. Maintain ordering as closely as
   // possible while meeting that demand however.
-  auto CompareSections = [](const SecPtr &a, const SecPtr &b) {
-    if (a->Type == SHT_NULL)
+  auto CompareSections = [](const SecPtr &A, const SecPtr &B) {
+    if (A->Type == SHT_NULL)
       return true;
-    if (a->Flags & SHF_ALLOC && b->Flags & SHF_ALLOC)
-      return a->Addr < b->Addr;
-    return a->Index < b->Index;
+    if (A->Flags & SHF_ALLOC && B->Flags & SHF_ALLOC)
+      return A->Addr < B->Addr;
+    return A->Index < B->Index;
   };
   std::sort(std::begin(Sections), std::end(Sections), CompareSections);
 }
 
-uint64_t align(uint64_t value, uint64_t multiple) {
-  if (!multiple || value % multiple == 0)
-    return value;
-  return value + multiple - value % multiple;
+uint64_t align(uint64_t Value, uint64_t Multiple) {
+  if (!Multiple || Value % Multiple == 0)
+    return Value;
+  return Value + Multiple - Value % Multiple;
 }
 
 template <class ELFT> void Object<ELFT>::assignOffsets() {
   // Decide file offsets and indexs
-  size_t PhdrSize = Segments.size() * sizeof(typename ELFT::Phdr);
+  size_t PhdrSize = Segments.size() * sizeof(Elf_Phdr);
   // After the header and the program headers we can put section data.
-  uint64_t Offset = sizeof(typename ELFT::Ehdr) + PhdrSize;
+  uint64_t Offset = sizeof(ELF_Ehdr) + PhdrSize;
   uint64_t Index = 0;
   for (auto &Section : Sections) {
     // The segment can have a different alignment than the section. We need to
@@ -237,7 +236,7 @@ template <class ELFT> void Object<ELFT>::finalize() {
   uint64_t Offset = SHOffset;
   for (auto &Section : Sections) {
     Section->HeaderOffset = Offset;
-    Offset += sizeof(typename ELFT::Shdr);
+    Offset += sizeof(Elf_Shdr);
     Section->NameIndex = SectionNames->findIndex(Section->Name);
     Section->finalize();
   }
@@ -255,13 +254,13 @@ void Object<ELFT>::writeHeader(FileOutputBuffer &Out) const {
   Ehdr.e_machine = Machine;
   Ehdr.e_version = Version;
   Ehdr.e_entry = Entry;
-  Ehdr.e_phoff = sizeof(typename ELFT::Ehdr);
+  Ehdr.e_phoff = sizeof(Elf_Ehdr);
   Ehdr.e_shoff = SHOffset;
   Ehdr.e_flags = Flags;
-  Ehdr.e_ehsize = sizeof(typename ELFT::Ehdr);
-  Ehdr.e_phentsize = sizeof(typename ELFT::Phdr);
+  Ehdr.e_ehsize = sizeof(Elf_Ehdr);
+  Ehdr.e_phentsize = sizeof(Elf_Phdr);
   Ehdr.e_phnum = Segments.size();
-  Ehdr.e_shentsize = sizeof(typename ELFT::Shdr);
+  Ehdr.e_shentsize = sizeof(Elf_Shdr);
   Ehdr.e_shnum = Sections.size();
   Ehdr.e_shstrndx = SectionNames->Index;
 }
