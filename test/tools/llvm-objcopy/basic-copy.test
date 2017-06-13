@@ -27,6 +27,16 @@ Sections:
 # CHECK-NEXT: Offset:
 # CHECK-NEXT: Size: 4
 
+# CHECK:      Name: .symtab
+# CHECK-NEXT: Type: SHT_SYMTAB
+# CHECK-NEXT: Flags [
+# CHECK-NEXT: ]
+
+# CHECK:      Name: .strtab
+# CHECK-NEXT: Type: SHT_STRTAB
+# CHECK-NEXT: Flags [
+# CHECK-NEXT: ]
+
 # CHECK:      Name: .shstrtab
 # CHECK-NEXT: Type: SHT_STRTAB
 # CHECK-NEXT: Flags [

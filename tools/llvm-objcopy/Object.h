@@ -107,28 +107,27 @@ public:
 };
 
 struct Symbol {
+  uint8_t Binding;
+  SectionBase *DefinedIn;
+  uint32_t Index;
   llvm::StringRef Name;
   uint32_t NameIndex;
-  uint8_t Binding;
-  uint8_t Type;
-  SectionBase *DefinedIn;
-  uint64_t Value;
   uint64_t Size;
+  uint8_t Type;
+  uint64_t Value;
 };
 
 // The symbol data changes from ELFT to ELFT so we need to template it. This
 // lets us implement writeSection
 template <class ELFT> class SymbolTableSection : public SectionBase {
 private:
-  StringTableSection &SymbolNames;
-  llvm::StringMap<Symbol> Symbols;
   std::vector<Symbol> FinalSymbols;
+  llvm::StringMap<Symbol> Symbols;
+  StringTableSection &SymbolNames;
 
 public:
   SymbolTableSection(StringTableSection &SymNames) : SymbolNames(SymNames) {
     Type = llvm::ELF::SHT_SYMTAB;
-    // The initlal size is to account for the dummy symbol at index 0.
-    Size = sizeof(typename ELFT::Sym);
     Align = sizeof(typename ELFT::Word);
     EntrySize = sizeof(typename ELFT::Sym);
   }
@@ -161,6 +160,8 @@ private:
   void assignOffsets();
   void readProgramHeaders(const llvm::object::ELFFile<ELFT> &ElfFile);
   void readSectionHeaders(const llvm::object::ELFFile<ELFT> &ElfFile);
+  void readSymbolTable(const llvm::object::ELFFile<ELFT> &ElfFile,
+                       const Elf_Shdr &SymTabShdr);
   void writeHeader(llvm::FileOutputBuffer &Out) const;
   void writeProgramHeaders(llvm::FileOutputBuffer &Out) const;
   void writeSectionData(llvm::FileOutputBuffer &Out) const;

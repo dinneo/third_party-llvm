@@ -114,9 +114,11 @@ void SymbolTableSection<ELFT>::addSymbol(StringRef Name, uint8_t Bind,
   Sym.DefinedIn = DefinedIn;
   Sym.Value = Value;
   Sym.Size = Sz;
+  Sym.Index = Symbols.size();
   auto Res = Symbols.insert(std::make_pair(Name, Sym));
   if (Res.second)
     Size += sizeof(typename ELFT::Sym);
+  SymbolNames.addString(Name);
 }
 
 template <class ELFT>
@@ -126,19 +128,27 @@ void SymbolTableSection<ELFT>::removeSymbol(StringRef Name) {
     Symbols.erase(Iter);
     Size += sizeof(ELFT::Sym);
   }
+  SymbolNames.removeString(Name);
 }
 
 template <class ELFT> void SymbolTableSection<ELFT>::finalize() {
   auto CompareBinding = [](const Symbol &a, const Symbol &b) {
     return a.Binding < b.Binding;
   };
+  auto CompareIndex = [](const Symbol &a, const Symbol &b) {
+    return a.Index < b.Index;
+  };
+  // Make sure that SymbolNames is finalized first
+  SymbolNames.finalize();
   for (auto &Entry : Symbols) {
     Entry.second.NameIndex = SymbolNames.findIndex(Entry.second.Name);
     FinalSymbols.push_back(Entry.second);
   }
   Symbol DummyLocal;
   DummyLocal.Binding = STB_LOCAL;
-  std::sort(std::begin(FinalSymbols), std::end(FinalSymbols), CompareBinding);
+  std::sort(std::begin(FinalSymbols), std::end(FinalSymbols), CompareIndex);
+  std::stable_sort(std::begin(FinalSymbols), std::end(FinalSymbols),
+                   CompareBinding);
   auto Iter = std::upper_bound(std::begin(FinalSymbols), std::end(FinalSymbols),
                                DummyLocal, CompareBinding);
   Info = std::end(FinalSymbols) - Iter;
@@ -148,14 +158,9 @@ template <class ELFT> void SymbolTableSection<ELFT>::finalize() {
 template <class ELFT>
 void SymbolTableSection<ELFT>::writeSection(llvm::FileOutputBuffer &Out) const {
   uint8_t *Buf = Out.getBufferStart();
+  Buf += Offset;
   typename ELFT::Sym *Sym = reinterpret_cast<typename ELFT::Sym *>(Buf);
-  Sym->st_name = 0;
-  Sym->st_value = 0;
-  Sym->st_size = 0;
-  Sym->st_info = 0;
-  Sym->st_other = 0;
-  Sym->st_shndx = SHN_UNDEF;
-  ++Sym;
+
   for(auto &Symbol : FinalSymbols) {
     Sym->st_name = Symbol.NameIndex;
     Sym->st_value = Symbol.Value;
@@ -166,6 +171,7 @@ void SymbolTableSection<ELFT>::writeSection(llvm::FileOutputBuffer &Out) const {
       Sym->st_shndx = Symbol.DefinedIn->Index;
     else
       Sym->st_shndx = SHN_UNDEF;
+    ++Sym;
   }
 }
 
@@ -194,22 +200,63 @@ void Object<ELFT>::readProgramHeaders(const ELFFile<ELFT> &ElfFile) {
 }
 
 template <class ELFT>
+void Object<ELFT>::readSymbolTable(const ELFFile<ELFT> &ElfFile,
+                                   const Elf_Shdr &SymTabShdr) {
+
+  StringTableSection *StrTab =
+      dyn_cast<StringTableSection>(Sections[SymTabShdr.sh_link].get());
+
+  uint32_t SymTabIndex =
+      &SymTabShdr - unwrapOrError(ElfFile.sections()).begin();
+
+  SymbolTable = new SymbolTableSection<ELFT>(*StrTab);
+  SymbolTable->Name = unwrapOrError(ElfFile.getSectionName(&SymTabShdr));
+  SymbolTable->Index = SymTabIndex;
+  SectionNames->addString(SymbolTable->Name);
+
+  StringRef StrTabData =
+      unwrapOrError(ElfFile.getStringTableForSymtab(SymTabShdr));
+
+  for (const auto &Sym : unwrapOrError(ElfFile.symbols(&SymTabShdr))) {
+    SectionBase *DefSection = nullptr;
+    if (Sym.st_shndx != SHN_UNDEF)
+      DefSection = Sections[Sym.st_shndx].get();
+    StringRef Name = unwrapOrError(Sym.getName(StrTabData));
+    SymbolTable->addSymbol(Name, Sym.getBinding(), Sym.getType(), DefSection,
+                           Sym.getValue(), Sym.st_size);
+  }
+  // Calculate where the SymbolTable belongs
+  Sections[SymTabIndex].reset(SymbolTable);
+}
+
+template <class ELFT>
+static std::unique_ptr<SectionBase> makeSection(ArrayRef<uint8_t> Data,
+                                                uint64_t Type) {
+  if (Type == SHT_STRTAB)
+    return make_unique<StringTableSection>();
+  return make_unique<Section>(Data);
+}
+
+template <class ELFT>
 void Object<ELFT>::readSectionHeaders(const ELFFile<ELFT> &ElfFile) {
   uint32_t Index = 0;
-  uint32_t SymTabIndex;
   const Elf_Shdr *SymTabShdr = nullptr;
   for (const auto &Shdr : unwrapOrError(ElfFile.sections())) {
-    if (Shdr.sh_type == SHT_STRTAB) {
+    if (Index == SectionNames->Index) {
+      Sections.emplace_back(SectionNames);
       Index++;
       continue;
     }
     if (Shdr.sh_type == SHT_SYMTAB) {
+      // Put a placeholder in Sections so that Index corrasponds to the
+      // location in the array the symbol table should go
+      Sections.emplace_back(nullptr);
       SymTabShdr = &Shdr;
-      SymTabIndex = Index++;
+      Index++;
       continue;
     }
     ArrayRef<uint8_t> Data = unwrapOrError(ElfFile.getSectionContents(&Shdr));
-    SecPtr Sec = make_unique<Section>(Data);
+    SecPtr Sec = makeSection<ELFT>(Data, Shdr.sh_type);
     Sec->Name = unwrapOrError(ElfFile.getSectionName(&Shdr));
     Sec->Type = Shdr.sh_type;
     Sec->Flags = Shdr.sh_flags;
@@ -225,37 +272,9 @@ void Object<ELFT>::readSectionHeaders(const ELFFile<ELFT> &ElfFile) {
     Sections.push_back(std::move(Sec));
   }
   // If we encountered a symbol table construct it now that we should have
-  // every single. Sections are currently in Index sorted order but there is
-  // possibly a gap from the SymTabShdr. This means we can't just index into
-  // Sections to get the st_shndx item. But we can binary search which is almost
-  // as good.
-  if (SymTabShdr) {
-    StringTable = new StringTableSection();
-    StringTable->Name = ".strtab";
-    StringTable->Index = Index;
-    SectionNames->addString(StringTable->Name);
-    Sections.emplace_back(StringTable);
-
-    SymbolTable = new SymbolTableSection<ELFT>(*StringTable);
-    SymbolTable->Name = ".symtab";
-    SymbolTable->Index = SymTabIndex;
-    SectionNames->addString(SymbolTable->Name);
-
-    StringRef StrTabData =
-        unwrapOrError(ElfFile.getStringTableForSymtab(*SymTabShdr));
-    for (const auto &Sym : unwrapOrError(ElfFile.symbols(SymTabShdr))) {
-      auto DefSectionIter = std::lower_bound(
-          std::begin(Sections), std::end(Sections), Sym.st_shndx,
-          [](const SecPtr &A, uint32_t Index) { return A->Index < Index; });
-      StringRef Name = unwrapOrError(Sym.getName(StrTabData));
-      StringTable->addString(Name);
-      SymbolTable->addSymbol(Name, Sym.getBinding(), Sym.getType(),
-                             DefSectionIter->get(), Sym.getValue(),
-                             Sym.st_size);
-    }
-
-    Sections.emplace_back(SymbolTable);
-  }
+  // every section
+  if (SymTabShdr)
+    readSymbolTable(ElfFile, *SymTabShdr);
 }
 
 template <class ELFT> size_t Object<ELFT>::totalSize() const {
@@ -276,7 +295,8 @@ template <class ELFT> Object<ELFT>::Object(const ELFObjectFile<ELFT> &Obj) {
   Flags = Ehdr.e_flags;
 
   SectionNames = new StringTableSection();
-  SectionNames->Name = ".shstrtab";
+  auto Shdr = unwrapOrError(ElfFile.getSection(Ehdr.e_shstrndx));
+  SectionNames->Name = unwrapOrError(ElfFile.getSectionName(Shdr));
   SectionNames->Index = Ehdr.e_shstrndx;
   SectionNames->addString(SectionNames->Name);
 
@@ -331,6 +351,7 @@ template <class ELFT> void Object<ELFT>::finalize() {
 
   // finalize SectionNames first so that we can assign name indexes.
   SectionNames->finalize();
+
   // Finally now that all offsets and indexes have been set we can finalize any
   // reamining issues.
   uint64_t Offset = SHOffset;
