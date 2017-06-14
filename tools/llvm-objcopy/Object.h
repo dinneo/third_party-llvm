@@ -151,7 +151,6 @@ private:
   typedef typename ELFT::Phdr Elf_Phdr;
 
   SymbolTableSection<ELFT> *SymbolTable;
-  StringTableSection *StringTable;
   StringTableSection *SectionNames;
   std::vector<SecPtr> Sections;
   std::vector<Segment> Segments;
