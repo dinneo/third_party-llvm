@@ -27,8 +27,7 @@ class Segment;
 class SectionBase {
 public:
   llvm::StringRef Name;
-  Segment* ParrentSegment;
-  uint64_t HeaderOffset;
+  Segment *ParrentSegment = nullptr;
   uint32_t Index;
 
   uint64_t Addr = 0;
@@ -44,8 +43,8 @@ public:
 
   virtual ~SectionBase() {}
   virtual void finalize();
-  template <class ELFT> void writeHeader(llvm::FileOutputBuffer &Out) const;
-  virtual void writeSection(llvm::FileOutputBuffer &Out) const = 0;
+  template <class ELFT> void writeHeader(uint8_t *Buf) const;
+  virtual void writeSection(uint8_t *Buf) const = 0;
 };
 
 class Segment {
@@ -57,6 +56,8 @@ private:
   };
 
   std::set<const SectionBase *, SectionCompare> Sections;
+  std::vector<std::unique_ptr<SectionBase>> InterstitialSections;
+  llvm::ArrayRef<uint8_t> Contents;
 
 public:
   uint64_t Align;
@@ -68,6 +69,7 @@ public:
   uint64_t Type;
   uint64_t VAddr;
 
+  Segment(llvm::ArrayRef<uint8_t> Data) : Contents(Data) {}
   void finalize();
   const SectionBase * firstSection() const {
     if(Sections.size())
@@ -75,7 +77,8 @@ public:
     return nullptr;
   }
   void addSection(const SectionBase *sec) { Sections.insert(sec); }
-  template <class ELFT> void writeHeader(llvm::FileOutputBuffer &Out) const;
+  void writeMemSegment(uint8_t *Buf) const;
+  template <class ELFT> void writeHeader(uint8_t *Buf) const;
 };
 
 class Section : public SectionBase {
@@ -83,8 +86,8 @@ private:
   llvm::ArrayRef<uint8_t> Contents;
 
 public:
-  Section(llvm::ArrayRef<uint8_t> Data) : Contents(Data) {}
-  void writeSection(llvm::FileOutputBuffer &Out) const override;
+  Section(llvm::ArrayRef<uint8_t> Data) : Contents(Data) { Size = Data.size(); }
+  void writeSection(uint8_t *Buf) const override;
 };
 
 class StringTableSection : public SectionBase {
@@ -100,7 +103,7 @@ public:
   void removeString(llvm::StringRef Name);
   uint32_t findIndex(llvm::StringRef Name) const;
   void finalize() override;
-  void writeSection(llvm::FileOutputBuffer &Out) const override;
+  void writeSection(uint8_t *Buf) const override;
   static bool classof(const SectionBase *S) {
     return S->Type == llvm::ELF::SHT_STRTAB;
   }
@@ -136,15 +139,14 @@ public:
                  SectionBase *DefinedIn, uint64_t Value, uint64_t Sz);
   void removeSymbol(llvm::StringRef);
   void finalize() override;
-  void writeSection(llvm::FileOutputBuffer &) const override;
+  void writeSection(uint8_t *Buf) const override;
   static bool classof(const SectionBase *S) {
     return S->Type == llvm::ELF::SHT_SYMTAB;
   }
 };
 
-template<class ELFT>
-class Object {
-private:
+template <class ELFT> class ObjectCopyBase {
+protected:
   typedef std::unique_ptr<SectionBase> SecPtr;
   typedef typename ELFT::Shdr Elf_Shdr;
   typedef typename ELFT::Ehdr Elf_Ehdr;
@@ -155,16 +157,11 @@ private:
   std::vector<SecPtr> Sections;
   std::vector<Segment> Segments;
 
-  void sortSections();
-  void assignOffsets();
+private:
   void readProgramHeaders(const llvm::object::ELFFile<ELFT> &ElfFile);
   void readSectionHeaders(const llvm::object::ELFFile<ELFT> &ElfFile);
   void readSymbolTable(const llvm::object::ELFFile<ELFT> &ElfFile,
                        const Elf_Shdr &SymTabShdr);
-  void writeHeader(llvm::FileOutputBuffer &Out) const;
-  void writeProgramHeaders(llvm::FileOutputBuffer &Out) const;
-  void writeSectionData(llvm::FileOutputBuffer &Out) const;
-  void writeSectionHeaders(llvm::FileOutputBuffer &Out) const;
 
 public:
   uint8_t Ident[16];
@@ -175,9 +172,42 @@ public:
   uint32_t Version;
   uint32_t Flags;
 
-  Object(const llvm::object::ELFObjectFile<ELFT> &Obj);
-  size_t totalSize() const;
-  void finalize();
-  void write(llvm::FileOutputBuffer &Out);
+  ObjectCopyBase(const llvm::object::ELFObjectFile<ELFT> &Obj);
+
+  virtual size_t totalSize() const = 0;
+  virtual void finalize() = 0;
+  virtual void write(llvm::FileOutputBuffer &Out) const = 0;
+  virtual ~ObjectCopyBase() {}
+};
+
+template <class ELFT> class ObjectCopyELF : public ObjectCopyBase<ELFT> {
+private:
+  typedef std::unique_ptr<SectionBase> SecPtr;
+  typedef typename ELFT::Shdr Elf_Shdr;
+  typedef typename ELFT::Ehdr Elf_Ehdr;
+  typedef typename ELFT::Phdr Elf_Phdr;
+
+  void sortSections();
+  void assignOffsets();
+  void writeHeader(llvm::FileOutputBuffer &Out) const;
+  void writeProgramHeaders(llvm::FileOutputBuffer &Out) const;
+  void writeSectionData(llvm::FileOutputBuffer &Out) const;
+  void writeSectionHeaders(llvm::FileOutputBuffer &Out) const;
+
+public:
+  ObjectCopyELF(const llvm::object::ELFObjectFile<ELFT> &Obj)
+      : ObjectCopyBase<ELFT>(Obj) {}
+  virtual size_t totalSize() const override;
+  virtual void finalize() override;
+  virtual void write(llvm::FileOutputBuffer &Out) const override;
+};
+
+template <class ELFT> class ObjectCopyBinary : public ObjectCopyBase<ELFT> {
+public:
+  ObjectCopyBinary(const llvm::object::ELFObjectFile<ELFT> &Obj)
+      : ObjectCopyBase<ELFT>(Obj) {}
+  virtual size_t totalSize() const override;
+  virtual void finalize() override;
+  virtual void write(llvm::FileOutputBuffer &Out) const override;
 };
 #endif

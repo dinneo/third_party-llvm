@@ -50,12 +50,20 @@ LLVM_ATTRIBUTE_NORETURN void reportError(StringRef File, llvm::Error E) {
 cl::opt<std::string> InputFilename(cl::Positional, cl::desc("<input>"));
 cl::opt<std::string> OutputFilename(cl::Positional, cl::desc("<output>"),
                                     cl::init("-"));
+cl::opt<bool> OutputBinary("output-binary", cl::desc("output raw binary"));
+
 void CopyBinary(const ELFObjectFile<ELF64LE> &ObjFile) {
   std::unique_ptr<FileOutputBuffer> Buffer;
-  Object<ELF64LE> Obj{ObjFile};
-  Obj.finalize();
+  std::unique_ptr<ObjectCopyBase<ELF64LE>> ObjCopy;
+
+  if (OutputBinary)
+    ObjCopy.reset(new ObjectCopyBinary<ELF64LE>(ObjFile));
+  else
+    ObjCopy.reset(new ObjectCopyELF<ELF64LE>(ObjFile));
+  ObjCopy->finalize();
+
   ErrorOr<std::unique_ptr<FileOutputBuffer>> BufferOrErr =
-      FileOutputBuffer::create(OutputFilename, Obj.totalSize(),
+      FileOutputBuffer::create(OutputFilename, ObjCopy->totalSize(),
                                FileOutputBuffer::F_executable);
   if (auto EC = BufferOrErr.getError())
     error("failed to open " + OutputFilename);
@@ -67,7 +75,8 @@ void CopyBinary(const ELFObjectFile<ELF64LE> &ObjFile) {
   if (EC)
     report_fatal_error(EC.message());
   // now if the program fails for any reason the output file will be deleted
-  Obj.write(*Buffer);
+  ObjCopy->write(*Buffer);
+
   if (auto EC = Buffer->commit())
     reportError(OutputFilename, EC);
   Out->keep();
