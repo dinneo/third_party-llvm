@@ -39,6 +39,7 @@ public:
   void MinimizeCrashLoop(const Unit &U);
   void ShuffleAndMinimize(UnitVector *V);
   void InitializeTraceState();
+  void AssignTaintLabels(uint8_t *Data, size_t Size);
   void RereadOutputCorpus(size_t MaxSize);
 
   size_t secondsSinceProcessStartUp() {
